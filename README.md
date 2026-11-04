@@ -53,7 +53,8 @@ Everything else is Emergence with six neighbours instead of four:
 ## Run it
 
 ```
-pip install -r requirements.txt       # torch with CUDA for your GPU, if not already installed
+pip install -r requirements.txt       # see the GPU note below
+python -c "import torch; print(torch.cuda.is_available())"     # must say True to use the GPU
 python run.py                         # live viewer, box 40 deep x 144 x 144
 python run.py --depth 48 --size 192   # bigger box
 python run.py --headless --steps 500000 --out runs/night1 --video      # overnight
@@ -62,6 +63,12 @@ python plot.py runs/night1            # metrics.png
 python inspect_world.py runs/night1/ckpt_0500000.pt                    # who is alive, at what height
 python profile.py runs/night1/ckpt_0500000.pt                          # cells, light and nutrient by depth
 ```
+
+**GPU note.** On Windows, a plain `pip install torch` installs a CPU-only build, and the world then
+runs on the CPU. The first line `run.py` prints shows which device is in use (`device=cpu` or
+`device=cuda`). To use an NVIDIA card, uninstall torch and install a CUDA build with the command
+pytorch.org's install selector gives, for example
+`pip install torch --index-url https://download.pytorch.org/whl/cu126`.
 
 **Viewer:** drag the mouse to turn the box, wheel to zoom, `O` for a slow automatic orbit.
 `TAB` switches between the 3D view, a vertical slice and a horizontal slice. `C` cuts the box
@@ -135,6 +142,72 @@ values are the only tuning.
 - **Everything is green by accident.** Lineage colour is a random readout of the phenotype,
   and the winning clade happens to read out green. It has nothing to do with chlorophyll.
 - **Population** grew from 3,800 to 6,100 cells, about 6 % of the box.
+
+## The long run: a shallow box, 100,000 steps
+
+Antti's overnight run: a box 12 deep × 32 × 32 (12,288 voxels), seed 0, default laws, 100,000
+steps on CPU (`device=cpu` in the log, 28 steps per second). Files: [log](docs/longrun/log.txt),
+[config](docs/longrun/config.json), [metrics](docs/longrun/metrics.csv).
+
+![long run metrics](docs/longrun/metrics.png)
+
+Four snapshots from the run, in the order they were sent. Each one shows, from the left: the box
+from above, from below, cut open, and a vertical slice.
+
+![a](docs/longrun/snap_a.png)
+![b](docs/longrun/snap_b.png)
+![c](docs/longrun/snap_c.png)
+![d](docs/longrun/snap_d.png)
+
+What happened, from the metrics:
+
+| | step 500 | step 20,000 | step 100,000 |
+|---|---|---|---|
+| cells | 1,076 | 1,240 | 1,764 |
+| founding lineages | 618 | 3 | **1** (from step ~40,000 on) |
+| genomes alive | 633 | 79 | 111 |
+| body size a random cell lives in | 1.5 | 275 | **1,270** |
+| largest body | 8 | 553 | **1,496** (85 % of all cells) |
+| strangers touching a cell | 2.1 | 1.1 | 0.9 |
+| body-mates touching a cell | 0.4 | 2.6 | 3.5 |
+| light caught before the floor | 42 % | 47 % | 59 % |
+| photosynthesis per cell | 0.025 | 0.024 | 0.019 |
+| energy per cell | 0.26 | 0.40 | 0.61 |
+| mutations since founding (mean / max) | 0.03 / 1 | 3.1 / 5 | 10.3 / 17 |
+
+- **One organism took the surface.** One founding lineage won, and its cells stayed attached
+  until a single body held about 85 % of all living cells: a mat 2–4 layers thick covering the
+  top of the box. Bodies merged in the same window as the lineages died out (steps 15,000–40,000).
+- **It's very likely a genetic mosaic.** Mutation at birth gives a child a new genome, but the
+  child stays in its parent's body. With one clade, around 100 genotypes alive and 85 % of
+  cells in one body, most of those genotypes have to sit inside the mat. The patchwork of
+  colours in the snapshots is consistent with that (colour follows genome, not body). Opening
+  the last checkpoint in the viewer and comparing view `2` (bodies) with view `1` (life) would
+  confirm it.
+- **The mat gets better at catching light and shares it.** It caught 42 % → 59 % of the light
+  that would have reached the floor. Each cell makes less (shading inside the mat), yet each cell
+  holds more energy (0.26 → 0.61). That's what you'd expect if body-mates pool energy, but
+  `--set share_rate=0` is the control that would test it.
+- **No deep living layer, and that's expected for this depth.** With only 12 layers the
+  nutrient reaches the surface (about 0.5 throughout the water, all run long), so light is the
+  only thing in short supply and life sits at the very top. The busiest layer is the surface
+  for all 100,000 steps. The 24-deep CPU run above, where the nutrient runs out before the
+  surface, is the regime with the floating layer.
+- **The "tall" metric flickers, and it's an artefact.** `tall_fraction` jumps between 0 and
+  0.85 from step ~37,000 on, and the body height between 2.7 and 3.6. Nearly every cell is in
+  one body, and that body sits right at the 4-layer threshold (a quarter of 12). Whenever a
+  few of its cells hang down into the 4th layer (the spikes under the mat in snapshot d), the
+  whole body counts as tall. That's one bit about one body, not a population of tall organisms.
+- **A dip and recovery near the end.** Between steps 85,000 and 95,000 the population fell from
+  ~2,100 to ~1,450, the mat shrank, and both recovered. These metrics can't say why.
+
+The first three rows of the original `metrics.csv` belong to an earlier start at the default box
+(19,652 cells at 0.9 steps per second, on CPU), written to the same folder. They're left out
+here.
+
+Not shown by this run: anything about the 3D-specific question (bodies spanning from nutrient
+into light), because in a 12-deep box there's no gap to span. For that, the box has to be deep
+enough that the nutrient runs out before the surface, about 24 layers or more at these laws.
 
 ## What to look for, and how to know it is real
 
